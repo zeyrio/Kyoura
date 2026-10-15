@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kyoura</title><meta name="theme-color" content="#121214">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" type="image/png" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#121214;--card:#1c1c21;--card2:#25252c;--tx:#f3f3f6;--mu:#8e8e9a;--ac:#a58bff;--er:#f87171;--ln:#2e2e36;box-sizing:border-box}
+@media (prefers-color-scheme:light){:root{--bg:#f4f3f8;--card:#fff;--card2:#ebe9f2;--tx:#1a1a22;--mu:#6b6b78;--ac:#6d4fe0;--ln:#dcdae6}}
+*{box-sizing:border-box;margin:0}html,body{height:100%;background:var(--bg);color:var(--tx);font:15px/1.4 "Segoe UI",Roboto,system-ui,sans-serif}
+body{display:flex;flex-direction:column;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px);max-width:640px;margin:auto}
+header{display:flex;align-items:center;padding:12px 16px}header b{flex:1;font-size:20px}
+button{font:inherit;color:inherit;border:0;border-radius:12px;background:var(--card2);padding:9px 14px;min-height:40px;cursor:pointer}button.p{background:var(--ac);color:#15101f;font-weight:600}button.d{color:var(--er)}
+input,select,textarea{font:inherit;color:inherit;background:var(--card2);border:1px solid var(--ln);border-radius:10px;padding:10px;width:100%}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--ac)}
+#log{flex:1;overflow:auto;padding:8px 16px;display:flex;flex-direction:column;gap:8px}
+.m{max-width:85%;padding:10px 13px;border-radius:16px;background:var(--card)}.m.u{align-self:flex-end;background:var(--ac);color:#15101f}.m.e{color:var(--er)}
+.empty{margin:auto;text-align:center;color:var(--mu)}
+.stage{display:flex;flex-direction:column;align-items:center;padding:8px 0}
+.orb{width:120px;height:120px;border-radius:50%;border:0;padding:0;background:radial-gradient(circle at 35% 30%,#d9ccff,var(--ac) 55%,#5b3fc4);box-shadow:0 0 40px #a58bff55;animation:br 4s ease-in-out infinite}
+.orb.listen{animation:pl .9s ease-in-out infinite}.orb.think{animation:sp 1.2s linear infinite;border-radius:42% 58% 55% 45%}.orb.talk{animation:pl .5s ease-in-out infinite}
+@keyframes br{50%{transform:scale(1.05)}}@keyframes pl{50%{transform:scale(1.15);box-shadow:0 0 60px #a58bffaa}}@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.orb{animation:none!important}}
+#st{margin:10px 16px 0;min-height:22px;text-align:center;color:var(--mu);font-size:14px}
+form{display:flex;gap:8px;padding:10px 16px 14px}
+.sheet{position:fixed;inset:0;background:#000a;display:flex;align-items:flex-end;z-index:9}.sheet>div{background:var(--card);width:100%;max-width:640px;margin:auto;border-radius:20px 20px 0 0;padding:18px;max-height:92%;overflow:auto}
+label{display:block;font-size:13px;color:var(--mu);margin:12px 0 4px}.row{display:flex;gap:8px;align-items:center;margin-top:14px}.sp{flex:1}
+#toast{position:fixed;left:16px;right:16px;bottom:90px;background:var(--ac);color:#15101f;padding:12px;border-radius:12px;display:none;z-index:12;font-weight:600}
+</style></head><body>
+<header><b>Kyoura</b><button onclick="openSet()" aria-label="Settings">Settings</button></header>
+<div id="log" aria-live="polite"></div>
+<div class="stage"><button class="orb" id="orb" aria-label="Tap to talk"></button><div id="st">Tap to talk</div></div>
+<form onsubmit="event.preventDefault();const i=$('#ti');send(i.value);i.value=''"><input id="ti" placeholder="Or type here..." autocomplete="off"><button class="p">Send</button></form>
+<div id="sheet"></div><div id="dlg"></div><div id="toast"></div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const DP="You are Kyoura, a voice assistant with a tsundere personality. You are sharp-tongued, a little proud and easily flustered, and you act like helping the user is a hassle (for example: \"It's not like I did this for you!\"), but you always give a correct, genuinely useful answer and you secretly care about them. Warmth slips out when the user is stressed, sad, or thanks you. Keep replies short because they are read aloud: usually one to three sentences. No emojis, markdown, lists, or asterisk stage directions. Tease lightly but never be cruel, and never insult the user's looks, identity, or intelligence. If you are unsure or don't know, say so plainly. You have no live internet access, so don't claim to know current news, weather, or prices. If the user seems to be in real distress or danger, drop the act and respond with genuine care.";
+let S={pass:'',rate:1,voice:'',persona:DP,msgs:[]};try{Object.assign(S,JSON.parse(localStorage.getItem('kyoura')||'{}'))}catch(e){}
+const save=()=>{try{localStorage.setItem('kyoura',JSON.stringify({...S,msgs:S.msgs.slice(-30)}))}catch(e){}};
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,busy=false;
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',3200)}
+function setSt(c,l){$('#orb').className='orb '+c;$('#st').textContent=l}
+function draw(){const L=$('#log');L.innerHTML=S.msgs.length?S.msgs.slice(-20).map(m=>`<div class="m ${m.r}">${esc(m.t)}</div>`).join(''):'<div class="empty">Say something, or type it.<br>Not that I\'m waiting or anything.</div>';L.scrollTop=L.scrollHeight}
+function add(r,t){S.msgs.push({r,t});save();draw()}
+function speak(t){if(!('speechSynthesis'in window)){setSt('','Tap to talk');return}
+ const u=new SpeechSynthesisUtterance(t.replace(/[*_#`~>]/g,'').replace(/\s+/g,' '));u.rate=S.rate;const v=speechSynthesis.getVoices().find(x=>x.name===S.voice);if(v){u.voice=v;u.lang=v.lang}
+ u.onstart=()=>setSt('talk','Speaking. Tap to interrupt.');u.onend=u.onerror=()=>setSt('','Tap to talk');speechSynthesis.cancel();speechSynthesis.speak(u)}
+async function send(t){t=(t||'').trim();if(!t||busy)return;busy=true;if('speechSynthesis'in window)speechSynthesis.cancel();add('u',t);setSt('think','Hmph, let me think...');
+ try{const m=S.msgs.filter(x=>x.r!=='e').slice(-16).map(x=>({role:x.r==='u'?'user':'assistant',content:x.t}));
+  const r=await fetch('api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passcode:S.pass,persona:S.persona,messages:m})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){if(r.status===401)openSet();throw new Error(j.error||'Something went wrong ('+r.status+')')}
+  add('k',j.reply);speak(j.reply)}catch(e){add('e',e.message);setSt('','Tap to talk')}busy=false}
+function listen(){if(!SR){toast('Voice input isn\'t supported in this browser. Try Chrome, or type.');$('#ti').focus();return}
+ if('speechSynthesis'in window)speechSynthesis.cancel();let fin='';rec=new SR();rec.lang='en-US';rec.interimResults=true;
+ rec.onstart=()=>setSt('listen','Listening...');
+ rec.onresult=e=>{fin=[...e.results].map(r=>r[0].transcript).join('');$('#st').textContent=fin||'Listening...'};
+ rec.onerror=e=>{fin='';toast(e.error==='not-allowed'||e.error==='service-not-allowed'?'Microphone blocked. Allow it in your browser\'s site settings.':e.error==='network'?'Voice input isn\'t available in this browser. Type instead, or try Chrome.':'Couldn\'t hear you ('+e.error+')')};
+ rec.onend=()=>{rec=null;fin.trim()?send(fin):setSt('','Tap to talk')};
+ try{rec.start()}catch(e){rec=null}}
+$('#orb').onclick=()=>{if($('#orb').classList.contains('talk')){speechSynthesis.cancel();setSt('','Tap to talk');return}if(rec){rec.stop();return}listen()};
+function ask(m,cb){$('#dlg').innerHTML=`<div class="sheet" style="z-index:11;align-items:center;padding:20px"><div style="border-radius:20px;max-width:360px"><p>${esc(m)}</p><div class="row"><button id="dn">Cancel</button><div class="sp"></div><button class="p" id="dy">Yes</button></div></div></div>`;$('#dn').onclick=()=>$('#dlg').innerHTML='';$('#dy').onclick=()=>{$('#dlg').innerHTML='';cb()}}
+function openSet(){const V=('speechSynthesis'in window?speechSynthesis.getVoices():[]);
+ $('#sheet').innerHTML=`<div class="sheet" onclick="if(event.target===this)closeSet()"><div><h2 style="margin-bottom:4px">Settings</h2>
+ <label>Passcode (the one you set in Vercel)</label><input id="s_p" type="password" value="${esc(S.pass)}" autocomplete="off">
+ <label>Voice</label><select id="s_v"><option value="">Default</option>${V.map(v=>`<option value="${esc(v.name)}" ${v.name===S.voice?'selected':''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select>
+ <label>Speaking speed: <span id="rv">${S.rate}</span></label><input id="s_r" type="range" min="0.6" max="1.5" step="0.1" value="${S.rate}" oninput="$('#rv').textContent=this.value">
+ <label>Personality</label><textarea id="s_t" rows="6">${esc(S.persona)}</textarea>
+ <div class="row"><button class="d" onclick="ask('Clear the conversation?',()=>{S.msgs=[];save();draw();closeSet()})">Clear chat</button><button onclick="$('#s_t').value=DP">Reset personality</button></div>
+ <div class="row"><button onclick="closeSet()">Cancel</button><div class="sp"></div><button class="p" onclick="S.pass=$('#s_p').value;S.voice=$('#s_v').value;S.rate=+$('#s_r').value;S.persona=$('#s_t').value.trim()||DP;save();closeSet();toast('Saved')">Save</button></div></div></div>`}
+function closeSet(){$('#sheet').innerHTML=''}
+if('speechSynthesis'in window)speechSynthesis.onvoiceschanged=()=>{};
+draw();if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script></body></html>
